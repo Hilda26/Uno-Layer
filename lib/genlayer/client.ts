@@ -30,11 +30,14 @@
  */
 
 import { getSessionAddress, getSessionKey } from "@/lib/wallet/session";
+import { getEnv } from "@/lib/utils/env";
 
-const RPC      = process.env.NEXT_PUBLIC_GENLAYER_RPC_URL
-                 ?? "https://studio.genlayer.com/api";
-const CONTRACT = (process.env.NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS
-                 ?? "0xcD8A89d489A45EB7e9883A716f0CD796F907a5F1") as `0x${string}`;
+// getEnv strips the UTF-8 BOM (U+FEFF) that PowerShell can inject into env vars
+const RPC      = getEnv("NEXT_PUBLIC_GENLAYER_RPC_URL", "https://studio.genlayer.com/api");
+const CONTRACT = getEnv(
+  "NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS",
+  "0xcD8A89d489A45EB7e9883A716f0CD796F907a5F1"
+) as `0x${string}`;
 const CHAIN_ID = 61999;
 
 // ─── Encoding ────────────────────────────────────────────────────────────────
