@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #0B0F14;
+  --surface: #111827;
+  --surface-soft: #1F2937;
+  --primary: #FF5A3D;
+  --cyan: #22D3EE;
+  --yellow: #FACC15;
+  --green: #22C55E;
+  --red-card: #EF4444;
+  --blue-card: #2563EB;
+  --green-card: #22C55E;
+  --yellow-card: #FACC15;
+  --wild-card: #111827;
+  --text: #F8FAFC;
+  --muted: #94A3B8;
+  --border: rgba(255,255,255,0.10);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-soft: var(--surface-soft);
+  --color-primary: var(--primary);
+  --color-cyan: var(--cyan);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', system-ui, sans-serif;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+.glass {
+  background: rgba(17, 24, 39, 0.7);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border);
+}
+
+.card-red    { background: linear-gradient(135deg, #EF4444 0%, #B91C1C 100%); }
+.card-blue   { background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%); }
+.card-green  { background: linear-gradient(135deg, #22C55E 0%, #15803D 100%); }
+.card-yellow { background: linear-gradient(135deg, #FACC15 0%, #CA8A04 100%); }
+.card-wild   { background: linear-gradient(135deg, #111827 0%, #374151 100%); border: 2px solid #FF5A3D; }
+
+.neon-border { box-shadow: 0 0 12px rgba(255,90,61,0.5); }
+.cyan-border { box-shadow: 0 0 12px rgba(34,211,238,0.5); }
+
+.scrollbar-thin::-webkit-scrollbar { width: 4px; }
+.scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+.scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
+
+@keyframes layerBadge {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+.layer-badge { animation: layerBadge 1s ease-in-out infinite; }
+
+@keyframes cardPlay {
+  0% { transform: translateY(0) scale(1); opacity: 1; }
+  100% { transform: translateY(-60px) scale(0.8); opacity: 0; }
+}
+
+@keyframes dealIn {
+  0% { transform: translateY(-40px) scale(0.8); opacity: 0; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+.deal-in { animation: dealIn 0.3s ease-out forwards; }
