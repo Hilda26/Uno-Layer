@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, use } from "react";
+import { useEffect, useState, useCallback, use, useMemo } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import { createClient } from "@/lib/supabase/client";
 import { useGameStore } from "@/store/gameStore";
@@ -22,7 +22,8 @@ import type { GameState, UnoLayerCard, CardColour, PlayerState, MoveRecord, Chat
 export default function GamePage({ params }: { params: Promise<{ gameId: string }> }) {
   const { gameId } = use(params);
   const { address, isConnected } = useWallet();
-  const supabase = createClient();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const supabase = useMemo(() => createClient(), []);
 
   const {
     gameState, setGameState,
