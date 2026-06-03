@@ -14,22 +14,16 @@ interface Props {
 }
 
 export default function PlayerHand({ cards, activeColour, activeDiscard, isMyTurn, onPlayCard }: Props) {
-  const { selectedCard, setSelectedCard, openColourPicker } = useGameStore();
+  const { openColourPicker } = useGameStore();
 
   const handleClick = (card: UnoLayerCard) => {
     if (!isMyTurn) return;
     if (!isPlayable(card, activeColour, activeDiscard)) return;
 
-    if (selectedCard?.id === card.id) {
-      // Double-click to play (or wild opens colour picker)
-      if (card.colour === "wild") {
-        openColourPicker(card);
-      } else {
-        onPlayCard(card);
-        setSelectedCard(null);
-      }
+    if (card.colour === "wild") {
+      openColourPicker(card);
     } else {
-      setSelectedCard(card);
+      onPlayCard(card);
     }
   };
 
@@ -41,7 +35,7 @@ export default function PlayerHand({ cards, activeColour, activeDiscard, isMyTur
             key={card.id}
             card={card}
             playable={isMyTurn && isPlayable(card, activeColour, activeDiscard)}
-            selected={selectedCard?.id === card.id}
+            selected={false}
             onClick={() => handleClick(card)}
           />
         ))}
@@ -49,11 +43,6 @@ export default function PlayerHand({ cards, activeColour, activeDiscard, isMyTur
           <div className="text-sm" style={{ color: "#22C55E" }}>No cards — you won! 🎉</div>
         )}
       </div>
-      {selectedCard && isMyTurn && (
-        <div className="text-center text-xs mt-1" style={{ color: "#94A3B8" }}>
-          Click again to play · {selectedCard.colour === "wild" ? "Choose colour" : ""}
-        </div>
-      )}
     </div>
   );
 }
