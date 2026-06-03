@@ -26,6 +26,14 @@ function LobbyContent() {
   const [isMeReady, setIsMeReady] = useState(false);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState("");
+  const [copiedInvite, setCopiedInvite] = useState(false);
+
+  const handleCopyInvite = async (roomCode: string) => {
+    const link = `${window.location.origin}/lobby?join=${roomCode}`;
+    await navigator.clipboard.writeText(link);
+    setCopiedInvite(true);
+    setTimeout(() => setCopiedInvite(false), 2000);
+  };
 
   const loadPublicRooms = useCallback(async () => {
     const { data } = await supabase
@@ -224,13 +232,26 @@ function LobbyContent() {
                 {myRoom.isPrivate && " 🔒"}
               </span>
             </div>
-            <button
-              onClick={handleLeave}
-              className="text-xs px-3 py-1 rounded-lg"
-              style={{ background: "rgba(239,68,68,0.15)", color: "#EF4444" }}
-            >
-              Leave
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handleCopyInvite(myRoom.roomCode)}
+                className="text-xs px-3 py-1 rounded-lg font-semibold transition-all"
+                style={{
+                  background: copiedInvite ? "rgba(34,197,94,0.15)" : "rgba(34,211,238,0.12)",
+                  color: copiedInvite ? "#22C55E" : "#22D3EE",
+                  border: `1px solid ${copiedInvite ? "rgba(34,197,94,0.3)" : "rgba(34,211,238,0.3)"}`,
+                }}
+              >
+                {copiedInvite ? "✓ Copied" : "🔗 Invite"}
+              </button>
+              <button
+                onClick={handleLeave}
+                className="text-xs px-3 py-1 rounded-lg"
+                style={{ background: "rgba(239,68,68,0.15)", color: "#EF4444" }}
+              >
+                Leave
+              </button>
+            </div>
           </div>
 
           {/* Player seats */}
