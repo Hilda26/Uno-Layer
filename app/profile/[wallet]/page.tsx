@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, use } from "react";
+import { useEffect, useState, use, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { mapProfile } from "@/lib/utils/mappers";
 import { useWallet } from "@/hooks/useWallet";
@@ -23,7 +23,8 @@ export default function ProfilePage({ params }: { params: Promise<{ wallet: stri
   const [editMode, setEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
   const [recentGames, setRecentGames] = useState<RecentGame[]>([]);
-  const supabase = createClient();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const supabase = useMemo(() => createClient(), []);
 
   const isMe = address?.toLowerCase() === wallet.toLowerCase();
 
@@ -87,13 +88,19 @@ export default function ProfilePage({ params }: { params: Promise<{ wallet: stri
   const saveUsername = async () => {
     if (!isMe || !address) return;
     setSaving(true);
-    await supabase
-      .from("profiles")
-      .update({ username, updated_at: new Date().toISOString() })
-      .eq("wallet_address", wallet.toLowerCase());
-    setEditMode(false);
-    setSaving(false);
-    setProfile((p) => (p ? { ...p, username } : p));
+    try {
+      const { error } = await supabase
+        .from("profiles")
+        .update({ username, updated_at: new Date().toISOString() })
+        .eq("wallet_address", wallet.toLowerCase());
+      if (error) throw new Error(error.message);
+      setEditMode(false);
+      setProfile((p) => (p ? { ...p, username } : p));
+    } catch (e) {
+      console.error("Failed to save username:", e);
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (!profile) {
