@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, Suspense } from "react";
+import { useEffect, useState, useCallback, Suspense, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useWallet } from "@/hooks/useWallet";
 import { createClient } from "@/lib/supabase/client";
@@ -14,7 +14,8 @@ function LobbyContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { address, isConnected } = useWallet();
-  const supabase = createClient();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const supabase = useMemo(() => createClient(), []);
 
   const [rooms, setRooms] = useState<Room[]>([]);
   const [myRoom, setMyRoom] = useState<Room | null>(null);
