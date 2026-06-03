@@ -45,6 +45,7 @@ import {
   getSessionAddress,
   clearSession,
   isSessionActive,
+  restoreFromStorage,
 } from "./session";
 
 // ─── Create ─────────────────────────────────────────────────────────────────
@@ -123,6 +124,14 @@ export function isUnlocked(): boolean {
 /** True if an encrypted wallet exists in IndexedDB. */
 export async function hasWallet(): Promise<boolean> {
   return walletExists();
+}
+
+/**
+ * Restore the in-memory session from sessionStorage (survives page refresh).
+ * Call this once on app init before checking isUnlocked().
+ */
+export function restoreSession(): boolean {
+  return restoreFromStorage();
 }
 
 /**

@@ -47,7 +47,10 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
   init: async () => {
     set({ loading: true });
     const exists = await W.hasWallet();
-    // If already unlocked in session (e.g. hot-reload) restore address
+    // Restore session from sessionStorage so a page refresh doesn't
+    // require the user to re-enter their password.
+    // sessionStorage is automatically cleared when the tab/browser closes.
+    W.restoreSession();
     const sessionAddr = W.getAddress();
     set({
       hasWallet: exists,
