@@ -1,4 +1,4 @@
-import type { Room, RoomPlayer, Profile } from "@/types";
+import type { Room, RoomPlayer, Profile, ChatMessage } from "@/types";
 
 // Supabase returns snake_case columns.
 // These mappers convert DB rows → our camelCase types.
@@ -29,6 +29,18 @@ export function mapRoomPlayer(p: any): RoomPlayer {
     seatIndex: p.seat_index,
     isReady: p.is_ready,
     joinedAt: p.joined_at,
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function mapChatMessage(m: any): ChatMessage {
+  return {
+    id: m.id,
+    roomId: m.room_id,
+    walletAddress: m.wallet_address,
+    username: m.username ?? undefined,
+    message: m.message,
+    createdAt: m.created_at,
   };
 }
 

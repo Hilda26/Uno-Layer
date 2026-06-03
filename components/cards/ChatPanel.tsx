@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { ChatMessage } from "@/types";
 
@@ -13,8 +13,10 @@ interface Props {
 export default function ChatPanel({ roomId, walletAddress, messages }: Props) {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
-  const supabase = createClient();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -24,13 +26,20 @@ export default function ChatPanel({ roomId, walletAddress, messages }: Props) {
     const text = input.trim();
     if (!text || sending) return;
     setSending(true);
-    await supabase.from("chat_messages").insert({
-      room_id: roomId,
-      wallet_address: walletAddress,
-      message: text,
-    });
-    setInput("");
-    setSending(false);
+    setSendError("");
+    try {
+      const { error } = await supabase.from("chat_messages").insert({
+        room_id: roomId,
+        wallet_address: walletAddress,
+        message: text,
+      });
+      if (error) throw new Error(error.message);
+      setInput("");
+    } catch (e: unknown) {
+      setSendError(e instanceof Error ? e.message : "Failed to send");
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -40,9 +49,9 @@ export default function ChatPanel({ roomId, walletAddress, messages }: Props) {
         {messages.map((m) => (
           <div key={m.id} className="text-xs">
             <span className="font-mono" style={{ color: "#22D3EE" }}>
-              {m.walletAddress.slice(0, 6)}…
+              {m.walletAddress?.slice(0, 6) ?? "???"}…
             </span>
-            {m.walletAddress.toLowerCase() === walletAddress.toLowerCase() && (
+            {m.walletAddress?.toLowerCase() === walletAddress.toLowerCase() && (
               <span className="ml-1 text-xs" style={{ color: "#FF5A3D" }}>(you)</span>
             )}
             <span className="ml-1" style={{ color: "#F8FAFC" }}>{m.message}</span>
@@ -50,6 +59,9 @@ export default function ChatPanel({ roomId, walletAddress, messages }: Props) {
         ))}
         <div ref={bottomRef} />
       </div>
+      {sendError && (
+        <p className="text-xs mb-1" style={{ color: "#EF4444" }}>{sendError}</p>
+      )}
       <div className="flex gap-2">
         <input
           value={input}
@@ -66,7 +78,7 @@ export default function ChatPanel({ roomId, walletAddress, messages }: Props) {
           className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all hover:scale-105 disabled:opacity-40"
           style={{ background: "#FF5A3D", color: "white" }}
         >
-          Send
+          {sending ? "…" : "Send"}
         </button>
       </div>
     </div>

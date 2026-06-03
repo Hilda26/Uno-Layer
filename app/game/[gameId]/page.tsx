@@ -18,6 +18,7 @@ import WinnerModal from "@/components/cards/WinnerModal";
 import GenLayerProofPanel from "@/components/cards/GenLayerProofPanel";
 
 import type { GameState, UnoLayerCard, CardColour, PlayerState, MoveRecord, ChatMessage } from "@/types";
+import { mapChatMessage } from "@/lib/utils/mappers";
 
 export default function GamePage({ params }: { params: Promise<{ gameId: string }> }) {
   const { gameId } = use(params);
@@ -126,13 +127,13 @@ export default function GamePage({ params }: { params: Promise<{ gameId: string 
     const ch = supabase
       .channel(`chat-${roomId}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_messages", filter: `room_id=eq.${roomId}` }, (payload) => {
-        addChatMessage(payload.new as ChatMessage);
+        addChatMessage(mapChatMessage(payload.new));
       })
       .subscribe();
 
     // Load initial chat
     supabase.from("chat_messages").select("*").eq("room_id", roomId).order("created_at").limit(50)
-      .then(({ data }) => { if (data) setChatMessages(data as ChatMessage[]); });
+      .then(({ data }) => { if (data) setChatMessages(data.map(mapChatMessage)); });
 
     return () => { supabase.removeChannel(ch); };
   }, [roomId, supabase, addChatMessage, setChatMessages]);
