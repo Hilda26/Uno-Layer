@@ -8,6 +8,7 @@ import { mapRoom, mapRoomPlayer } from "@/lib/utils/mappers";
 import type { Room, RoomPlayer } from "@/types";
 import RoomCard from "@/components/lobby/RoomCard";
 import CreateRoomModal from "@/components/lobby/CreateRoomModal";
+import TxApprovalModal from "@/components/lobby/TxApprovalModal";
 import WalletButton from "@/components/wallet/WalletButton";
 
 function LobbyContent() {
@@ -27,6 +28,7 @@ function LobbyContent() {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState("");
   const [copiedInvite, setCopiedInvite] = useState(false);
+  const [showTxApproval, setShowTxApproval] = useState(false);
 
   const handleCopyInvite = async (roomCode: string) => {
     const link = `${window.location.origin}/lobby?join=${roomCode}`;
@@ -161,8 +163,16 @@ function LobbyContent() {
       .eq("wallet_address", address.toLowerCase());
   };
 
-  const handleStart = async () => {
+  // Step 1: show the GEN token approval modal
+  const handleStart = () => {
     if (!address || !myRoom) return;
+    setShowTxApproval(true);
+  };
+
+  // Step 2: called by TxApprovalModal after the transaction is signed
+  const handleStartAfterTx = async () => {
+    if (!address || !myRoom) return;
+    setShowTxApproval(false);
     setStarting(true);
     setError("");
     try {
@@ -426,6 +436,16 @@ function LobbyContent() {
         <CreateRoomModal
           onClose={() => setShowCreate(false)}
           onCreated={() => { loadMyRoom(); setShowCreate(false); }}
+        />
+      )}
+
+      {showTxApproval && myRoom && (
+        <TxApprovalModal
+          gameId={myRoom.genlayerGameId ?? myRoom.id}
+          roomCode={myRoom.roomCode}
+          playerCount={myRoomPlayers.length}
+          onApproved={handleStartAfterTx}
+          onCancel={() => setShowTxApproval(false)}
         />
       )}
     </div>

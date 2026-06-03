@@ -161,6 +161,14 @@ async function write(
 // Write functions
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * Entry-fee payment — each game start requires the creator to sign and
+ * submit this transaction on the GenLayer chain. The contract records it
+ * as proof of intent; the fee amount is symbolic (0.01 GEN) for the MVP.
+ */
+export const glPayEntryFee  = (gameId: string, from?: string) =>
+  write("pay_entry_fee", [gameId, "0.01"], from);
+
 export const glCreateGame   = (gameId: string, maxPlayers: number, mode: string, from?: string) =>
   write("create_game", [gameId, maxPlayers, mode], from);
 

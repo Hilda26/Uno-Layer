@@ -43,7 +43,7 @@ export default function ChatPanel({ roomId, walletAddress, messages }: Props) {
   };
 
   return (
-    <div className="glass rounded-xl p-3 flex flex-col h-full">
+    <div className="glass rounded-xl p-3 flex flex-col" style={{ maxHeight: "15rem" }}>
       <h3 className="text-sm font-black mb-2" style={{ color: "#22D3EE" }}>Chat</h3>
       <div className="flex-1 overflow-y-auto space-y-2 scrollbar-thin mb-2" style={{ minHeight: "100px" }}>
         {messages.map((m) => (

@@ -16,7 +16,7 @@ const COLOUR_DOT: Record<string, string> = {
 
 export default function MoveHistory({ moves }: Props) {
   return (
-    <div className="glass rounded-xl p-4 h-full overflow-hidden flex flex-col">
+    <div className="glass rounded-xl p-4 overflow-hidden flex flex-col" style={{ maxHeight: "13rem" }}>
       <h3 className="text-sm font-black mb-3" style={{ color: "#22D3EE" }}>Move History</h3>
       <div className="flex-1 overflow-y-auto space-y-2 scrollbar-thin">
         {moves.length === 0 && (
