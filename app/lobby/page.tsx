@@ -10,6 +10,8 @@ import RoomCard from "@/components/lobby/RoomCard";
 import CreateRoomModal from "@/components/lobby/CreateRoomModal";
 import TxApprovalModal from "@/components/lobby/TxApprovalModal";
 import WalletButton from "@/components/wallet/WalletButton";
+import { glSubmitShuffleSeed, glRequestShuffleSeed } from "@/lib/genlayer/client";
+import { generateSecret } from "@/lib/crypto/commitment";
 
 function LobbyContent() {
   const router = useRouter();
@@ -161,6 +163,17 @@ function LobbyContent() {
       .update({ is_ready: newReady })
       .eq("room_id", myRoom.id)
       .eq("wallet_address", address.toLowerCase());
+
+    // Submit this player's contribution toward the GenLayer consensus
+    // shuffle seed. The final deck order is derived on-chain from every
+    // player's contribution + game id + non-deterministic external entropy.
+    if (newReady && myRoom.genlayerGameId) {
+      try {
+        await glSubmitShuffleSeed(myRoom.genlayerGameId, generateSecret(), address);
+      } catch (e) {
+        console.warn("submit_shuffle_seed failed", e);
+      }
+    }
   };
 
   // Step 1: show the GEN token approval modal
@@ -176,10 +189,25 @@ function LobbyContent() {
     setStarting(true);
     setError("");
     try {
+      // Ask GenLayer to derive the consensus deck seed from every player's
+      // shuffle contribution + game id + non-deterministic external entropy.
+      // This seed is what actually determines card order, hands, and the
+      // first discard — not a local Math.random() shuffle.
+      let deckSeed: string | undefined;
+      if (myRoom.genlayerGameId) {
+        try {
+          const seedResult = await glRequestShuffleSeed(myRoom.genlayerGameId, address) as Record<string, unknown>;
+          const parsed = typeof seedResult === "string" ? JSON.parse(seedResult) : seedResult;
+          deckSeed = (parsed?.deck_seed as string) ?? undefined;
+        } catch (e) {
+          console.warn("request_shuffle_seed failed", e);
+        }
+      }
+
       const res = await fetch("/api/cards/deal", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ roomId: myRoom.id, creatorWallet: address.toLowerCase() }),
+        body: JSON.stringify({ roomId: myRoom.id, creatorWallet: address.toLowerCase(), deckSeed }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to start");

@@ -72,6 +72,8 @@ export default function GamePage({ params }: { params: Promise<{ gameId: string 
       moveCount: game.move_count,
       drawPileRemaining: game.draw_pile_remaining,
       winnerWallet: game.winner_wallet ?? undefined,
+      deckSeed: game.deck_seed ?? undefined,
+      deckEntropy: game.deck_entropy ?? undefined,
     };
 
     setGameState(gs);

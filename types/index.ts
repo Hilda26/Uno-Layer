@@ -51,6 +51,8 @@ export type GameState = {
   moveCount: number;
   drawPileRemaining: number;
   winnerWallet?: string;
+  deckSeed?: string;
+  deckEntropy?: string;
 };
 
 export type MoveRecord = {
@@ -66,6 +68,8 @@ export type MoveRecord = {
   drawCount?: number;
   handCommitmentAfter: string;
   handCountAfter: number;
+  powerShiftEffect?: string;
+  powerShiftTarget?: string;
   txHash?: string;
   createdAt: string;
 };

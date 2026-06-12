@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { buildDeck, shuffleDeck, getFirstValidDiscard } from "@/lib/cards/deck";
+import { buildDeck, shuffleDeck, seededShuffleDeck, getFirstValidDiscard } from "@/lib/cards/deck";
 import { computeDeckCommitment, computeHandCommitment, generateSecret } from "@/lib/crypto/commitment";
-import { glCommitDeck, glCommitHand, glStartGame } from "@/lib/genlayer/client";
+import { glCommitDeck, glCommitHand, glStartGame, glGetDeckSeed } from "@/lib/genlayer/client";
 
 export async function POST(req: NextRequest) {
   try {
-    const { roomId, creatorWallet } = await req.json();
+    const { roomId, creatorWallet, deckSeed } = await req.json();
     if (!roomId || !creatorWallet) {
       return NextResponse.json({ error: "roomId and creatorWallet required" }, { status: 400 });
     }
@@ -34,8 +34,14 @@ export async function POST(req: NextRequest) {
     // Set room to dealing
     await supabase.from("rooms").update({ status: "dealing" }).eq("id", roomId);
 
-    // Build & shuffle deck
-    let deck = shuffleDeck(buildDeck());
+    // Build & shuffle deck. When GenLayer consensus produced a deck seed
+    // (sha256 of player commitments + game id + non-deterministic external
+    // entropy, agreed on by validators), the actual card order is derived
+    // deterministically from that seed. Falls back to a local shuffle only
+    // if the consensus seed could not be obtained.
+    let deck = typeof deckSeed === "string" && deckSeed.length > 0
+      ? seededShuffleDeck(buildDeck(), deckSeed)
+      : shuffleDeck(buildDeck());
     const secret = generateSecret();
     const deckCommitment = await computeDeckCommitment(deck, secret);
 
@@ -71,6 +77,8 @@ export async function POST(req: NextRequest) {
         active_discard: firstDiscard,
         move_count: 0,
         draw_pile_remaining: deck.length,
+        deck_seed: typeof deckSeed === "string" && deckSeed.length > 0 ? deckSeed : null,
+        deck_entropy: null,
       })
       .select()
       .single();
@@ -129,6 +137,19 @@ export async function POST(req: NextRequest) {
       firstDiscard.colour === "wild" ? "red" : firstDiscard.colour,
       creatorWallet
     );
+
+    // Record the consensus entropy source alongside the deck seed for display
+    if (typeof deckSeed === "string" && deckSeed.length > 0) {
+      try {
+        const seedInfo = await glGetDeckSeed(genlayerGameId);
+        const parsed = JSON.parse(seedInfo) as Record<string, unknown>;
+        if (parsed?.deck_entropy) {
+          await supabase.from("games").update({ deck_entropy: parsed.deck_entropy }).eq("id", gameRow.id);
+        }
+      } catch (e) {
+        console.warn("get_deck_seed failed", e);
+      }
+    }
 
     // Mark room as active
     await supabase.from("rooms").update({

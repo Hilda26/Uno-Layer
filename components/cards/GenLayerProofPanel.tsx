@@ -14,27 +14,30 @@ interface Props {
 export default function GenLayerProofPanel({ gameState, lastTxHash, challenges = [] }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [resolvingId, setResolvingId] = useState<string | null>(null);
-  const [resolution, setResolution] = useState("");
+  const [verdicts, setVerdicts] = useState<Record<string, { verdict: string; penaltyPlayer: string; reasoning: string }>>({});
   const { address } = useWallet();
 
-  const isCreator =
-    gameState.players.length > 0 &&
-    gameState.players[0]?.walletAddress?.toLowerCase() === address?.toLowerCase();
-
   const handleResolve = async (challengeId: string) => {
-    if (!address || !resolution.trim()) return;
+    if (!address) return;
+    setResolvingId(challengeId);
     try {
-      // Contract: resolve_challenge(game_id, challenge_id, resolution: str)
-      await glResolveChallenge(
-        gameState.genlayerGameId,
-        challengeId,
-        resolution.trim(),
-        address
-      );
-      setResolvingId(null);
-      setResolution("");
+      // Contract: resolve_challenge(game_id, challenge_id) — GenLayer
+      // consensus (LLM referee) evaluates the challenged move and returns
+      // valid_move, invalid_move, or unclear.
+      const result = await glResolveChallenge(gameState.genlayerGameId, challengeId, address) as Record<string, unknown>;
+      const parsed = typeof result === "string" ? JSON.parse(result) : result;
+      setVerdicts((v) => ({
+        ...v,
+        [challengeId]: {
+          verdict: String(parsed?.verdict ?? "unclear"),
+          penaltyPlayer: String(parsed?.penalty_player ?? ""),
+          reasoning: String(parsed?.reasoning ?? ""),
+        },
+      }));
     } catch (e) {
       console.error("resolve_challenge failed", e);
+    } finally {
+      setResolvingId(null);
     }
   };
 
@@ -93,58 +96,51 @@ export default function GenLayerProofPanel({ gameState, lastTxHash, challenges =
               </p>
               {challenges
                 .filter((c) => c.status === "pending")
-                .map((c) => (
-                  <div key={c.id} className="rounded-lg p-2 mb-2"
-                    style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)" }}>
-                    <div className="font-mono text-xs mb-1" style={{ color: "#EF4444" }}>{c.id}</div>
-                    <div style={{ color: "#94A3B8" }}>
-                      Move #{c.targetMoveNumber} — {c.reason}
-                    </div>
-                    {isCreator && (
-                      resolvingId === c.id ? (
-                        <div className="mt-2 flex gap-1">
-                          <input
-                            value={resolution}
-                            onChange={(e) => setResolution(e.target.value)}
-                            placeholder="Resolution note…"
-                            className="flex-1 px-2 py-1 rounded text-xs"
-                            style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", color: "#F8FAFC", outline: "none" }}
-                          />
-                          <button
-                            onClick={() => handleResolve(c.id)}
-                            disabled={!resolution.trim()}
-                            className="px-2 py-1 rounded text-xs font-bold disabled:opacity-40"
-                            style={{ background: "#22C55E", color: "#0B0F14" }}
-                          >
-                            Confirm
-                          </button>
-                          <button
-                            onClick={() => { setResolvingId(null); setResolution(""); }}
-                            className="px-2 py-1 rounded text-xs"
-                            style={{ color: "#94A3B8" }}
-                          >
-                            Cancel
-                          </button>
+                .map((c) => {
+                  const verdict = verdicts[c.id];
+                  return (
+                    <div key={c.id} className="rounded-lg p-2 mb-2"
+                      style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)" }}>
+                      <div className="font-mono text-xs mb-1" style={{ color: "#EF4444" }}>{c.id}</div>
+                      <div style={{ color: "#94A3B8" }}>
+                        Move #{c.targetMoveNumber} — {c.reason}
+                      </div>
+                      {verdict ? (
+                        <div className="mt-2 rounded p-2 text-xs"
+                          style={{ background: "rgba(34,211,238,0.08)", border: "1px solid rgba(34,211,238,0.2)" }}>
+                          <div className="font-black uppercase" style={{ color: "#22D3EE" }}>
+                            GenLayer verdict: {verdict.verdict.replace("_", " ")}
+                          </div>
+                          {verdict.reasoning && (
+                            <div className="mt-1" style={{ color: "#94A3B8" }}>{verdict.reasoning}</div>
+                          )}
+                          {verdict.penaltyPlayer && (
+                            <div className="mt-1" style={{ color: "#FACC15" }}>
+                              Penalty (+2 cards): {verdict.penaltyPlayer.slice(0, 6)}…
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <button
-                          onClick={() => setResolvingId(c.id)}
-                          className="mt-1 text-xs px-2 py-0.5 rounded"
+                          onClick={() => handleResolve(c.id)}
+                          disabled={resolvingId === c.id}
+                          className="mt-1 text-xs px-2 py-0.5 rounded disabled:opacity-40"
                           style={{ background: "rgba(34,197,94,0.15)", color: "#22C55E" }}
                         >
-                          Resolve
+                          {resolvingId === c.id ? "Asking GenLayer…" : "Resolve via GenLayer AI"}
                         </button>
-                      )
-                    )}
-                  </div>
-                ))}
+                      )}
+                    </div>
+                  );
+                })}
             </div>
           )}
 
           <div className="pt-2 border-t text-xs" style={{ borderColor: "rgba(255,255,255,0.06)", color: "#94A3B8" }}>
-            MVP trust model: GenLayer verifies public moves, action effects, turn order, and winner.
-            Private hands stored in Supabase with auditable SHA-256 commitments.
-            resolve_challenge requires a non-empty resolution string (contract v0.2.17).
+            GenLayer verifies public moves, action effects, turn order, and winner.
+            Deck order is derived from a GenLayer consensus seed, and challenges
+            are resolved by a GenLayer AI referee. Private hands stored in
+            Supabase with auditable SHA-256 commitments.
           </div>
         </div>
       )}

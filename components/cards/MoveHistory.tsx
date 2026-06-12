@@ -38,6 +38,12 @@ export default function MoveHistory({ moves }: Props) {
                 {m.actionEffect.replace(/_/g, " ")}
               </span>
             )}
+            {m.powerShiftEffect && (
+              <span className="px-1 rounded text-xs" style={{ background: "rgba(34,211,238,0.15)", color: "#22D3EE" }}
+                title="Chosen by GenLayer consensus">
+                ⚡ {m.powerShiftEffect.replace(/_/g, " ")}
+              </span>
+            )}
           </div>
         ))}
       </div>

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { computeHandCommitment, generateSecret } from "@/lib/crypto/commitment";
-import { glSubmitCard, glEndGame } from "@/lib/genlayer/client";
+import { glSubmitCard, glEndGame, glResolvePowerShift, glJudgeFairPlay } from "@/lib/genlayer/client";
 import { isPlayable } from "@/lib/cards/deck";
 import type { UnoLayerCard, CardColour, Direction } from "@/types";
 
@@ -133,10 +133,9 @@ export async function POST(req: NextRequest) {
     } else if (card.kind === "pull_two") {
       skipNext = true;
       drawPenalty = 2;
-    } else if (card.kind === "power_shift") {
-      skipNext = true;
-      drawPenalty = 4;
     }
+    // Power Shift's effect is decided afterwards by GenLayer consensus
+    // (see resolve_power_shift below) — no local hardcoded skip/penalty.
 
     // Compute next player
     let nextIdx: number;
@@ -150,9 +149,47 @@ export async function POST(req: NextRequest) {
       nextIdx = nextPlayerIndex(currentIdx, players.length, newDirection);
     }
 
-    const nextPlayer = players[nextIdx] as { wallet_address: string };
+    let nextPlayer = players[nextIdx] as { wallet_address: string };
+    let drawPenaltyTarget = nextPlayer.wallet_address;
 
-    // Apply draw penalty to next player if needed
+    // Submit to GenLayer (client reads sender address from session automatically)
+    await glSubmitCard(
+      gameId,
+      JSON.stringify(card),
+      declaredColour ?? "",
+      newHandCommitment,
+      newCards.length
+    );
+
+    // Consensus Wild Power Card: GenLayer evaluates the live game state and
+    // chooses one of several effects — the outcome is not decided locally.
+    let powerShiftEffect: string | null = null;
+    let powerShiftTarget: string | null = null;
+
+    if (card.kind === "power_shift") {
+      try {
+        const result = await glResolvePowerShift(gameId, game.move_count + 1, walletAddress) as Record<string, unknown>;
+        const parsed = typeof result === "string" ? JSON.parse(result) : result;
+        powerShiftEffect = (parsed?.effect as string) ?? null;
+        powerShiftTarget = (parsed?.target_player as string) ?? null;
+
+        if (powerShiftEffect === "draw_two_strongest" && powerShiftTarget) {
+          drawPenalty = 2;
+          drawPenaltyTarget = powerShiftTarget.toLowerCase();
+        } else if (powerShiftEffect === "reverse_direction") {
+          newDirection = newDirection === "clockwise" ? "counterclockwise" : "clockwise";
+        } else if (powerShiftEffect === "skip_next") {
+          nextIdx = nextPlayerIndex(nextIdx, players.length, newDirection);
+          nextPlayer = players[nextIdx] as { wallet_address: string };
+          drawPenaltyTarget = nextPlayer.wallet_address;
+        }
+        // discard_one_weakest is informational — surfaced via moveRecord/response
+      } catch (e) {
+        console.warn("resolve_power_shift failed", e);
+      }
+    }
+
+    // Apply draw penalty to the targeted player if needed
     if (drawPenalty > 0) {
       const { data: deckRow } = await supabase
         .from("draw_decks")
@@ -169,13 +206,13 @@ export async function POST(req: NextRequest) {
           .from("player_hands")
           .select("*")
           .eq("game_id", game.id)
-          .eq("wallet_address", nextPlayer.wallet_address)
+          .eq("wallet_address", drawPenaltyTarget)
           .single();
 
         if (targetHand) {
           const targetCards = [...(targetHand.cards as UnoLayerCard[]), ...penaltyCards];
           const penaltyCommitment = await computeHandCommitment(
-            nextPlayer.wallet_address,
+            drawPenaltyTarget,
             targetCards,
             targetHand.hand_version + 1,
             secret
@@ -184,13 +221,13 @@ export async function POST(req: NextRequest) {
             .from("player_hands")
             .update({ cards: targetCards, hand_commitment: penaltyCommitment, hand_version: targetHand.hand_version + 1 })
             .eq("game_id", game.id)
-            .eq("wallet_address", nextPlayer.wallet_address);
+            .eq("wallet_address", drawPenaltyTarget);
 
           await supabase
             .from("game_players")
             .update({ hand_count: targetCards.length })
             .eq("game_id", game.id)
-            .eq("wallet_address", nextPlayer.wallet_address);
+            .eq("wallet_address", drawPenaltyTarget);
         }
 
         await supabase
@@ -204,15 +241,6 @@ export async function POST(req: NextRequest) {
           .eq("id", game.id);
       }
     }
-
-    // Submit to GenLayer (client reads sender address from session automatically)
-    await glSubmitCard(
-      gameId,
-      JSON.stringify(card),
-      declaredColour ?? "",
-      newHandCommitment,
-      newCards.length
-    );
 
     // Check winner
     const isWinner = newCards.length === 0;
@@ -258,6 +286,8 @@ export async function POST(req: NextRequest) {
       next_turn_wallet: nextPlayer.wallet_address,
       hand_commitment_after: newHandCommitment,
       hand_count_after: newCards.length,
+      power_shift_effect: powerShiftEffect,
+      power_shift_target: powerShiftTarget,
     };
     try { await supabase.from("moves").insert(moveRecord); } catch {}
 
@@ -287,6 +317,30 @@ export async function POST(req: NextRequest) {
 
     await supabase.from("games").update(gameUpdate).eq("id", game.id);
 
+    // Post-game fair-play judge: GenLayer consensus reviews the completed
+    // match for stalling, repeated/abusive challenges, and rage quits, then
+    // returns a per-player score adjustment.
+    if (isWinner) {
+      try {
+        const result = await glJudgeFairPlay(gameId, walletAddress) as Record<string, unknown>;
+        const parsed = typeof result === "string" ? JSON.parse(result) : result;
+        const results = (parsed?.results ?? {}) as Record<string, number>;
+
+        for (const [wallet, adjustment] of Object.entries(results)) {
+          const adj = Number(adjustment) || 0;
+          await supabase.from("fair_play_adjustments").upsert(
+            { game_id: game.id, wallet_address: wallet.toLowerCase(), adjustment: adj },
+            { onConflict: "game_id,wallet_address" }
+          );
+          try { await supabase.rpc("apply_fair_play_adjustment", { p_wallet: wallet.toLowerCase(), p_adjustment: adj }); } catch {}
+        }
+
+        await supabase.from("games").update({ fair_play_judged: true }).eq("id", game.id);
+      } catch (e) {
+        console.warn("judge_fair_play failed", e);
+      }
+    }
+
     return NextResponse.json({
       accepted: true,
       newActiveColour,
@@ -295,6 +349,8 @@ export async function POST(req: NextRequest) {
       isWinner,
       handCount: newCards.length,
       drawPenalty,
+      powerShiftEffect,
+      powerShiftTarget,
     });
   } catch (e: unknown) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Server error" }, { status: 500 });

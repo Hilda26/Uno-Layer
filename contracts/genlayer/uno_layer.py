@@ -3,6 +3,7 @@
 
 from genlayer import *
 import json
+import hashlib
 
 
 class UnoLayer(gl.Contract):
@@ -182,6 +183,10 @@ class UnoLayer(gl.Contract):
             "move_records": {},
             "challenges": [],
             "layer_callers": [],
+            "shuffle_seed_contributions": {},
+            "deck_seed": "",
+            "deck_entropy": "",
+            "fair_play_results": {},
         }
 
         self._save_game(game_id, state)
@@ -288,6 +293,89 @@ class UnoLayer(gl.Contract):
         })
 
     @gl.public.write
+    def submit_shuffle_seed(self, game_id: str, contribution: str) -> str:
+        state = self._get_game(game_id)
+        caller = self._caller()
+
+        self._require_player(state, caller)
+
+        if state["status"] != "waiting":
+            raise Exception("Shuffle seed contributions can only be submitted before the game starts")
+
+        if contribution == "":
+            raise Exception("Shuffle seed contribution cannot be empty")
+
+        if state["deck_seed"] != "":
+            raise Exception("Deck seed has already been generated for this game")
+
+        state["shuffle_seed_contributions"][caller] = contribution
+        self._save_game(game_id, state)
+
+        return json.dumps({
+            "status": "seed_submitted",
+            "game_id": game_id,
+            "player": caller,
+            "submitted": len(state["shuffle_seed_contributions"]),
+            "needed": len(state["players"]),
+        })
+
+    @gl.public.write
+    def request_shuffle_seed(self, game_id: str) -> str:
+        state = self._get_game(game_id)
+        caller = self._caller()
+
+        if state["creator"].lower() != caller.lower():
+            raise Exception("Only creator can request the consensus shuffle seed")
+
+        if state["status"] != "waiting":
+            raise Exception("Shuffle seed can only be requested before the game starts")
+
+        if state["deck_seed"] != "":
+            return json.dumps({
+                "status": "already_generated",
+                "game_id": game_id,
+                "deck_seed": state["deck_seed"],
+                "deck_entropy": state["deck_entropy"],
+            })
+
+        missing = []
+        for player in state["players"]:
+            if state["shuffle_seed_contributions"].get(player, "") == "":
+                missing.append(player)
+
+        if len(missing) > 0:
+            raise Exception(
+                "All players must submit a shuffle seed contribution first. Missing: "
+                + ", ".join(missing)
+            )
+
+        # Non-deterministic external entropy: every validator fetches the same
+        # public randomness beacon at consensus time. The result cannot be
+        # predicted ahead of time, but validators reach strict consensus
+        # because they observe the same external resource.
+        def get_entropy() -> str:
+            result = gl.nondet.web.render(
+                "https://drand.cloudflare.com/public/latest", mode="text"
+            )
+            return result
+
+        entropy = gl.eq_principle.strict_eq(get_entropy)
+
+        contributions_json = json.dumps(state["shuffle_seed_contributions"], sort_keys=True)
+        combined = game_id + "|" + contributions_json + "|" + str(entropy)
+        deck_seed = hashlib.sha256(combined.encode()).hexdigest()
+
+        state["deck_seed"] = deck_seed
+        state["deck_entropy"] = str(entropy)
+        self._save_game(game_id, state)
+
+        return json.dumps({
+            "status": "seed_generated",
+            "game_id": game_id,
+            "deck_seed": deck_seed,
+        })
+
+    @gl.public.write
     def start_game(self, game_id: str, first_discard_json: str, active_colour: str) -> str:
         state = self._get_game(game_id)
         caller = self._caller()
@@ -303,6 +391,9 @@ class UnoLayer(gl.Contract):
 
         if state["deck_commitment"] == "":
             raise Exception("Deck commitment is required before starting")
+
+        if state["deck_seed"] == "":
+            raise Exception("Consensus shuffle seed is required before starting")
 
         if active_colour not in self._normal_colours():
             raise Exception(f"Invalid active colour: {active_colour}")
@@ -342,6 +433,7 @@ class UnoLayer(gl.Contract):
             "first_player": state["players"][0],
             "active_colour": active_colour,
             "first_discard": first_discard,
+            "deck_seed": state["deck_seed"],
         })
 
     @gl.public.write
@@ -427,9 +519,10 @@ class UnoLayer(gl.Contract):
             skip_next = True
             draw_penalty = 2
 
-        elif card["kind"] == "power_shift":
-            skip_next = True
-            draw_penalty = 4
+        # Power Shift no longer applies a hardcoded skip/draw penalty here.
+        # Its effect is chosen afterwards by GenLayer consensus via
+        # resolve_power_shift(), which picks one of several outcomes based
+        # on the live game state (see that method for details).
 
         state["direction"] = new_direction
 
@@ -655,27 +748,74 @@ class UnoLayer(gl.Contract):
         })
 
     @gl.public.write
-    def resolve_challenge(self, game_id: str, challenge_id: str, resolution: str) -> str:
+    def resolve_challenge(self, game_id: str, challenge_id: str) -> str:
         state = self._get_game(game_id)
         caller = self._caller()
 
-        if state["creator"].lower() != caller.lower():
-            raise Exception("Only creator can resolve challenges in MVP")
+        self._require_player(state, caller)
 
-        if resolution == "":
-            raise Exception("Resolution cannot be empty")
-
-        found = False
+        challenge = None
 
         for ch in state["challenges"]:
             if ch["id"] == challenge_id:
-                ch["status"] = "resolved"
-                ch["resolution"] = resolution
-                found = True
+                challenge = ch
                 break
 
-        if not found:
+        if challenge is None:
             raise Exception("Challenge not found")
+
+        if challenge["status"] != "pending":
+            raise Exception("Challenge has already been resolved")
+
+        move_id = "move_" + str(challenge["move_number"])
+        move = state["move_records"].get(move_id)
+
+        if move is None:
+            raise Exception("Challenged move not found")
+
+        prompt = (
+            "You are the impartial AI referee for a UNO-style card game called UNO-LAYER.\n"
+            f"A player challenged move #{challenge['move_number']} for this reason: "
+            f"\"{challenge['reason']}\".\n"
+            f"Move record (JSON): {json.dumps(move)}\n\n"
+            "Rules: a card may be played if it matches the active colour, matches the "
+            "discard's number/action kind, or is a wild card (colour_shift / power_shift). "
+            "The 'old_active_colour' field is the colour that was active before this move.\n\n"
+            "Decide whether the move described was VALID under these rules.\n"
+            "Respond with EXACTLY one lowercase word and nothing else: "
+            "valid_move, invalid_move, or unclear."
+        )
+
+        def get_verdict() -> str:
+            result = gl.nondet.exec_prompt(prompt)
+            return result.strip().lower()
+
+        verdict = gl.eq_principle.prompt_comparative(
+            get_verdict,
+            "The result must be exactly one of: valid_move, invalid_move, unclear.",
+        )
+
+        verdict = str(verdict).strip().lower()
+
+        if verdict not in ["valid_move", "invalid_move", "unclear"]:
+            verdict = "unclear"
+
+        challenge["status"] = "resolved"
+        challenge["resolution"] = verdict
+        penalty_player = ""
+
+        if verdict == "invalid_move":
+            penalty_player = move["player"]
+            state["hand_counts"][penalty_player] = int(
+                state["hand_counts"].get(penalty_player, 0)
+            ) + 2
+        elif verdict == "valid_move":
+            penalty_player = challenge["challenger"]
+            state["hand_counts"][penalty_player] = int(
+                state["hand_counts"].get(penalty_player, 0)
+            ) + 2
+
+        challenge["penalty_player"] = penalty_player
 
         self._save_game(game_id, state)
 
@@ -683,7 +823,182 @@ class UnoLayer(gl.Contract):
             "status": "resolved",
             "game_id": game_id,
             "challenge_id": challenge_id,
-            "resolution": resolution,
+            "verdict": verdict,
+            "penalty_player": penalty_player,
+            "reasoning": (
+                f"GenLayer consensus reviewed move #{challenge['move_number']} "
+                f"and returned verdict '{verdict}'."
+            ),
+        })
+
+    @gl.public.write
+    def resolve_power_shift(self, game_id: str, move_number: u256) -> str:
+        state = self._get_game(game_id)
+        caller = self._caller()
+
+        self._require_player(state, caller)
+
+        move_number_int = int(move_number)
+        move_id = "move_" + str(move_number_int)
+        move = state["move_records"].get(move_id)
+
+        if move is None:
+            raise Exception("Move not found")
+
+        if move["card"]["kind"] != "power_shift":
+            raise Exception("Move is not a Power Shift play")
+
+        if move.get("power_shift_effect", "") != "":
+            raise Exception("Power Shift effect has already been resolved")
+
+        hand_counts = state["hand_counts"]
+        players = state["players"]
+
+        prompt = (
+            "You are resolving a 'Power Shift' wild card in the UNO-style game UNO-LAYER.\n"
+            f"Players and current hand sizes (JSON): {json.dumps(hand_counts)}\n"
+            f"Turn direction: {state['direction']}. "
+            f"Active colour before this play: {move['old_active_colour']}.\n\n"
+            "Choose exactly ONE effect from this list, considering hand sizes for balance:\n"
+            "- draw_two_strongest: the player with the FEWEST cards draws 2 penalty cards\n"
+            "- discard_one_weakest: the player with the MOST cards may discard 1 card\n"
+            "- reverse_direction: reverse the turn direction\n"
+            "- skip_next: the next player in turn order loses their turn\n\n"
+            "Respond with EXACTLY one lowercase token and nothing else: "
+            "draw_two_strongest, discard_one_weakest, reverse_direction, or skip_next."
+        )
+
+        def get_effect() -> str:
+            result = gl.nondet.exec_prompt(prompt)
+            return result.strip().lower()
+
+        effect = gl.eq_principle.prompt_comparative(
+            get_effect,
+            "The result must be exactly one of: draw_two_strongest, discard_one_weakest, "
+            "reverse_direction, skip_next.",
+        )
+
+        effect = str(effect).strip().lower()
+        valid_effects = [
+            "draw_two_strongest",
+            "discard_one_weakest",
+            "reverse_direction",
+            "skip_next",
+        ]
+
+        if effect not in valid_effects:
+            effect = "skip_next"
+
+        target_player = ""
+
+        if effect == "draw_two_strongest":
+            target_player = min(players, key=lambda p: int(hand_counts.get(p, 0)))
+            hand_counts[target_player] = int(hand_counts.get(target_player, 0)) + 2
+            state["draw_pile_remaining"] = self._safe_subtract_draw_pile(
+                int(state["draw_pile_remaining"]), 2
+            )
+        elif effect == "discard_one_weakest":
+            target_player = max(players, key=lambda p: int(hand_counts.get(p, 0)))
+        elif effect == "reverse_direction":
+            state["direction"] = (
+                "counterclockwise" if state["direction"] == "clockwise" else "clockwise"
+            )
+        elif effect == "skip_next":
+            state = self._advance_turn(state, True)
+
+        move["power_shift_effect"] = effect
+        move["power_shift_target"] = target_player
+        state["move_records"][move_id] = move
+
+        self._save_game(game_id, state)
+
+        return json.dumps({
+            "status": "power_shift_resolved",
+            "game_id": game_id,
+            "move_id": move_id,
+            "effect": effect,
+            "target_player": target_player,
+            "reasoning": f"GenLayer consensus chose effect '{effect}' for Power Shift move #{move_number_int}.",
+        })
+
+    @gl.public.write
+    def judge_fair_play(self, game_id: str) -> str:
+        state = self._get_game(game_id)
+        caller = self._caller()
+
+        self._require_player(state, caller)
+
+        if state["status"] != "completed":
+            raise Exception("Game must be completed before fair play can be judged")
+
+        if state.get("fair_play_results"):
+            return json.dumps({
+                "status": "already_judged",
+                "game_id": game_id,
+                "results": state["fair_play_results"],
+            })
+
+        summary = {
+            "players": state["players"],
+            "winner": state["winner"],
+            "move_count": state["move_count"],
+            "challenges": state["challenges"],
+            "layer_callers": state["layer_callers"],
+            "final_hand_counts": state["hand_counts"],
+            "final_status": state["status"],
+        }
+
+        prompt = (
+            "You are the post-game fair-play judge for the UNO-style game UNO-LAYER.\n"
+            f"Game summary (JSON): {json.dumps(summary)}\n\n"
+            "For each player address in 'players', decide a fair-play SCORE ADJUSTMENT "
+            "integer between -10 and +5 (inclusive), based on signs of: suspicious or "
+            "repeated failed challenges, rage-quitting/forfeiting, stalling, or other "
+            "abnormal play patterns. A player with no issues gets 0.\n\n"
+            "Respond with ONLY a single JSON object mapping each player address (as given) "
+            "to an integer adjustment, e.g. {\"0xabc\": 0, \"0xdef\": -5}. No other text."
+        )
+
+        def get_adjustments() -> str:
+            result = gl.nondet.exec_prompt(prompt)
+            return result.strip()
+
+        raw = gl.eq_principle.prompt_comparative(
+            get_adjustments,
+            "The result must be a single JSON object mapping each player address to an "
+            "integer between -10 and 5.",
+        )
+
+        try:
+            adjustments = json.loads(str(raw))
+        except Exception:
+            adjustments = {}
+
+        results = {}
+
+        for player in state["players"]:
+            adj = adjustments.get(player, 0) if isinstance(adjustments, dict) else 0
+
+            try:
+                adj_int = int(adj)
+            except Exception:
+                adj_int = 0
+
+            if adj_int > 5:
+                adj_int = 5
+
+            if adj_int < -10:
+                adj_int = -10
+
+            results[player] = adj_int
+
+        state["fair_play_results"] = results
+        self._save_game(game_id, state)
+
+        return json.dumps({
+            "status": "judged",
+            "game_id": game_id,
+            "results": results,
         })
 
     @gl.public.write
@@ -843,6 +1158,21 @@ class UnoLayer(gl.Contract):
     def get_layer_callers(self, game_id: str) -> str:
         state = self._get_game(game_id)
         return json.dumps(state["layer_callers"])
+
+    @gl.public.view
+    def get_deck_seed(self, game_id: str) -> str:
+        state = self._get_game(game_id)
+
+        return json.dumps({
+            "deck_seed": state.get("deck_seed", ""),
+            "deck_entropy": state.get("deck_entropy", ""),
+            "contributions": state.get("shuffle_seed_contributions", {}),
+        })
+
+    @gl.public.view
+    def get_fair_play_results(self, game_id: str) -> str:
+        state = self._get_game(game_id)
+        return json.dumps(state.get("fair_play_results", {}))
 
     @gl.public.view
     def get_winner(self, game_id: str) -> str:

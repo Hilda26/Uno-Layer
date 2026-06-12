@@ -178,6 +178,12 @@ export const glJoinGame     = (gameId: string, from?: string) =>
 export const glCommitDeck   = (gameId: string, deckCommitment: string, from?: string) =>
   write("commit_deck", [gameId, deckCommitment], from);
 
+export const glSubmitShuffleSeed = (gameId: string, contribution: string, from?: string) =>
+  write("submit_shuffle_seed", [gameId, contribution], from);
+
+export const glRequestShuffleSeed = (gameId: string, from?: string) =>
+  write("request_shuffle_seed", [gameId], from);
+
 export const glCommitHand   = (
   gameId: string, player: string, handCommitment: string, handCount: number, from?: string
 ) => write("commit_hand", [gameId, player, handCommitment, handCount], from);
@@ -206,8 +212,15 @@ export const glChallengeMove = (gameId: string, moveNumber: number, reason: stri
   write("challenge_move", [gameId, moveNumber, reason], from);
 
 export const glResolveChallenge = (
-  gameId: string, challengeId: string, resolution: string, from?: string
-) => write("resolve_challenge", [gameId, challengeId, resolution], from);
+  gameId: string, challengeId: string, from?: string
+) => write("resolve_challenge", [gameId, challengeId], from);
+
+export const glResolvePowerShift = (
+  gameId: string, moveNumber: number, from?: string
+) => write("resolve_power_shift", [gameId, moveNumber], from);
+
+export const glJudgeFairPlay = (gameId: string, from?: string) =>
+  write("judge_fair_play", [gameId], from);
 
 export const glForfeitGame  = (gameId: string, from?: string) =>
   write("forfeit_game", [gameId], from);
@@ -231,6 +244,8 @@ export const glGetLastMove      = (gameId: string) => read("get_last_move",     
 export const glGetChallenges    = (gameId: string) => read("get_challenges",    [gameId]);
 export const glGetLayerCallers  = (gameId: string) => read("get_layer_callers", [gameId]);
 export const glGetWinner        = (gameId: string) => read("get_winner",        [gameId]);
+export const glGetDeckSeed      = (gameId: string) => read("get_deck_seed",     [gameId]);
+export const glGetFairPlayResults = (gameId: string) => read("get_fair_play_results", [gameId]);
 export const glGetTotalGames    = ()               => read("get_total_games",   []);
 export const glGetMove = (gameId: string, moveId: string) =>
   read("get_move", [gameId, moveId]);
