@@ -7,7 +7,6 @@ import type {
   MoveRecord,
   ChallengeRecord,
   ChatMessage,
-  CardColour,
 } from "@/types";
 
 interface GameStore {
@@ -30,6 +29,7 @@ interface GameStore {
   addMove: (move: MoveRecord) => void;
   setMoveHistory: (moves: MoveRecord[]) => void;
   addChallenge: (c: ChallengeRecord) => void;
+  setChallenges: (challenges: ChallengeRecord[]) => void;
   addChatMessage: (msg: ChatMessage) => void;
   setChatMessages: (msgs: ChatMessage[]) => void;
   openColourPicker: (card: UnoLayerCard) => void;
@@ -65,6 +65,7 @@ export const useGameStore = create<GameStore>((set) => ({
   setMoveHistory: (moves) => set({ moveHistory: moves }),
   addChallenge: (c) =>
     set((s) => ({ challenges: [c, ...s.challenges].slice(0, 20) })),
+  setChallenges: (challenges) => set({ challenges }),
   addChatMessage: (msg) =>
     set((s) => ({ chatMessages: [...s.chatMessages, msg].slice(-100) })),
   setChatMessages: (msgs) => set({ chatMessages: msgs }),

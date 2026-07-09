@@ -1,4 +1,4 @@
-import type { Room, RoomPlayer, Profile, ChatMessage } from "@/types";
+import type { Room, RoomPlayer, Profile, ChatMessage, MoveRecord, ChallengeRecord } from "@/types";
 
 // Supabase returns snake_case columns.
 // These mappers convert DB rows → our camelCase types.
@@ -61,5 +61,43 @@ export function mapProfile(p: any): Profile {
     challengesLost: p.challenges_lost,
     fairPlayScore: p.fair_play_score,
     createdAt: p.created_at,
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function mapMoveRecord(m: any): MoveRecord {
+  return {
+    id: m.id,
+    gameId: m.game_id,
+    moveNumber: m.move_number,
+    playerWallet: m.player_wallet,
+    card: m.card ?? null,
+    declaredColour: m.declared_colour ?? undefined,
+    actionEffect: m.action_effect ?? undefined,
+    newDirection: m.new_direction ?? undefined,
+    nextTurnWallet: m.next_turn_wallet ?? undefined,
+    drawCount: m.draw_count ?? undefined,
+    handCommitmentAfter: m.hand_commitment_after ?? "",
+    handCountAfter: m.hand_count_after ?? 0,
+    powerShiftEffect: m.power_shift_effect ?? undefined,
+    powerShiftTarget: m.power_shift_target ?? undefined,
+    txHash: m.tx_hash ?? undefined,
+    createdAt: m.created_at,
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function mapChallengeRecord(c: any): ChallengeRecord {
+  return {
+    id: c.id,
+    gameId: c.game_id,
+    challengerWallet: c.challenger_wallet,
+    targetMoveNumber: c.target_move_number,
+    reason: c.reason,
+    status: c.status,
+    resolution: c.resolution ?? undefined,
+    genlayerVerdict: c.genlayer_verdict ?? undefined,
+    penaltyPlayer: c.penalty_player ?? undefined,
+    createdAt: c.created_at,
   };
 }

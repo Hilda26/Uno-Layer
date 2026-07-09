@@ -17,31 +17,31 @@ import ChallengeModal from "@/components/cards/ChallengeModal";
 import WinnerModal from "@/components/cards/WinnerModal";
 import GenLayerProofPanel from "@/components/cards/GenLayerProofPanel";
 
-import type { GameState, UnoLayerCard, CardColour, PlayerState, MoveRecord, ChatMessage } from "@/types";
-import { mapChatMessage } from "@/lib/utils/mappers";
+import type { GameState, UnoLayerCard, CardColour, PlayerState } from "@/types";
+import { mapChatMessage, mapMoveRecord, mapChallengeRecord } from "@/lib/utils/mappers";
 
 export default function GamePage({ params }: { params: Promise<{ gameId: string }> }) {
   const { gameId } = use(params);
   const { address, isConnected } = useWallet();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const supabase = useMemo(() => createClient(), []);
 
   const {
     gameState, setGameState,
     myHand, setMyHand,
     moveHistory, setMoveHistory,
+    challenges, setChallenges, addChallenge,
     chatMessages, setChatMessages, addChatMessage,
     showColourPicker, closeColourPicker, pendingCard,
     showChallenge, openChallenge, closeChallenge,
     showWinner, closeWinner,
-    lastTxHash, setLastTxHash,
+    lastTxHash,
     isSubmitting, setSubmitting,
-    selectedCard, setSelectedCard,
-    reset,
+    setSelectedCard,
   } = useGameStore();
 
   const [hasDrawn, setHasDrawn] = useState(false);
   const [roomId, setRoomId] = useState<string | null>(null);
+  const activeGameId = gameState?.gameId;
 
   const loadGame = useCallback(async () => {
     const res = await fetch(`/api/games/${gameId}`);
@@ -89,19 +89,41 @@ export default function GamePage({ params }: { params: Promise<{ gameId: string 
   }, [gameId, address, setMyHand]);
 
   const loadMoves = useCallback(async () => {
+    if (!activeGameId) return;
     const { data } = await supabase
       .from("moves")
       .select("*")
-      .eq("game_id", gameState?.gameId ?? "")
+      .eq("game_id", activeGameId)
       .order("move_number", { ascending: false })
       .limit(30);
-    if (data) setMoveHistory(data as MoveRecord[]);
-  }, [supabase, gameState?.gameId, setMoveHistory]);
+    if (data) setMoveHistory(data.map(mapMoveRecord));
+  }, [supabase, activeGameId, setMoveHistory]);
+
+
+  const loadChallenges = useCallback(async () => {
+    if (!activeGameId) return;
+    const { data } = await supabase
+      .from("challenges")
+      .select("*")
+      .eq("game_id", activeGameId)
+      .order("created_at", { ascending: false })
+      .limit(20);
+    if (data) setChallenges(data.map(mapChallengeRecord));
+  }, [supabase, activeGameId, setChallenges]);
 
   useEffect(() => {
-    loadGame();
-    loadHand();
+    queueMicrotask(() => {
+      void loadGame();
+      void loadHand();
+    });
   }, [loadGame, loadHand]);
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      void loadMoves();
+      void loadChallenges();
+    });
+  }, [loadMoves, loadChallenges]);
 
   // Realtime game updates
   useEffect(() => {
@@ -114,14 +136,18 @@ export default function GamePage({ params }: { params: Promise<{ gameId: string 
         loadGame();
       })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "moves" }, (payload) => {
-        const move = payload.new as MoveRecord & { player_wallet: string };
+        const move = payload.new as { player_wallet: string };
+        loadMoves();
         if (move.player_wallet !== address?.toLowerCase()) {
           loadHand();
         }
       })
+      .on("postgres_changes", { event: "*", schema: "public", table: "challenges" }, () => {
+        loadChallenges();
+      })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [gameId, supabase, address, loadGame, loadHand]);
+  }, [gameId, supabase, address, loadGame, loadHand, loadMoves, loadChallenges]);
 
   // Realtime chat
   useEffect(() => {
@@ -207,8 +233,23 @@ export default function GamePage({ params }: { params: Promise<{ gameId: string 
 
   const handleChallenge = useCallback(async (reason: string, moveNumber: number) => {
     if (!address || !gameState) return;
-    await glChallengeMove(gameId, moveNumber, reason, address);
-  }, [address, gameState, gameId]);
+    const result = await glChallengeMove(gameId, moveNumber, reason, address) as Record<string, unknown>;
+    const challengeId = String(result?.challenge_id ?? "");
+    const { data, error } = await supabase
+      .from("challenges")
+      .insert({
+        game_id: gameState.gameId,
+        challenger_wallet: address.toLowerCase(),
+        target_move_number: moveNumber,
+        reason,
+        status: "pending",
+        resolution: challengeId ? `GenLayer challenge id: ${challengeId}` : null,
+      })
+      .select()
+      .single();
+    if (!error && data) addChallenge(mapChallengeRecord(data));
+    closeChallenge();
+  }, [address, gameState, gameId, supabase, addChallenge, closeChallenge]);
 
   if (!isConnected) {
     return (
@@ -298,7 +339,7 @@ export default function GamePage({ params }: { params: Promise<{ gameId: string 
           <GenLayerProofPanel
             gameState={gameState}
             lastTxHash={lastTxHash}
-            challenges={useGameStore.getState().challenges}
+            challenges={challenges}
           />
         </div>
       </div>

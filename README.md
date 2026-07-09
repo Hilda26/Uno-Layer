@@ -23,9 +23,10 @@ UNO-LAYER is a private-hand multiplayer colour-and-action card game inspired by 
 ```
 User / Browser
   → Next.js 16 (App Router, TypeScript, Tailwind CSS)
-  → Wallet-signed GenLayer calls (wagmi / viem / RainbowKit)
+  → Embedded local browser wallet (AES-256-GCM encrypted key in IndexedDB)
+  → genlayer-js 1.1.8 signed GenLayer calls
   → GenLayer Intelligent Contract (Python, py-genlayer)
-     → Official match state, move validation, action effects, winner settlement
+     → Official match state, move validation, consensus randomness, AI adjudication, winner settlement
 
 User / Browser
   → Supabase (Postgres + Realtime + RLS)
@@ -57,10 +58,24 @@ User / Browser
 | Draw recording | `record_draw` |
 | Pass turn | `pass_turn` |
 | Layer call | `call_layer` |
+| Consensus shuffle seed | `submit_shuffle_seed`, `request_shuffle_seed` |
 | Challenges | `challenge_move`, `resolve_challenge` |
+| Consensus Power Shift outcome | `resolve_power_shift` |
+| Fair-play review | `judge_fair_play` |
 | Winner declaration | `end_game` |
 
 ---
+
+## GenLayer Consensus Usage
+
+The reviewed contract is no longer only deterministic. Deterministic code still validates ordinary rule mechanics, but meaningful non-deterministic GenLayer consensus is used for:
+
+- **Deck seeding**: players submit hidden shuffle contributions, then `request_shuffle_seed` combines them with external beacon entropy agreed by validators.
+- **Challenge adjudication**: `resolve_challenge` asks validator consensus to review the disputed move record and return a verdict.
+- **Power Shift resolution**: `resolve_power_shift` lets consensus choose the wild-card penalty from allowed outcomes instead of hardcoding one deterministic result.
+- **Post-game fair-play**: `judge_fair_play` reviews the completed match and returns profile score adjustments.
+
+These results are cached in Supabase so the frontend can show the consensus deck seed, challenge verdicts, Power Shift effects, and fair-play updates in real gameplay.
 
 ## MVP Trust Model
 
@@ -113,14 +128,14 @@ Fill in:
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-NEXT_PUBLIC_GENLAYER_RPC_URL=http://localhost:4000/api
+NEXT_PUBLIC_GENLAYER_RPC_URL=https://studio.genlayer.com/api
 NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS=0x...
-NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=your-wc-project-id
+NEXT_PUBLIC_CHAIN_ID=61999
 ```
 
 ### 3. Supabase migration
 
-Run the SQL in `supabase/migrations/001_initial_schema.sql` in your Supabase SQL editor (Dashboard → SQL Editor → New query → paste → Run).
+Run the SQL in `supabase/migrations/001_initial_schema.sql`, then `supabase/migrations/002_consensus_features.sql`, in your Supabase SQL editor (Dashboard → SQL Editor → New query → paste → Run).
 
 Or with the Supabase CLI:
 
@@ -155,6 +170,8 @@ npm run build
 npm start
 ```
 
+Next.js 16 uses Turbopack by default. This project uses the documented `next build --webpack` production path because it is currently more reliable on this Windows workspace. Build output is written to `.next-build`; set `NEXT_DIST_DIR` if you need an isolated verification directory.
+
 ---
 
 ## Project Structure
@@ -185,7 +202,7 @@ UNO-LAYER/
 │   └── layout/                   # Navbar, Providers
 ├── lib/
 │   ├── supabase/                 # client / server / admin
-│   ├── genlayer/                 # Contract call wrappers
+│   ├── genlayer/                 # genlayer-js contract call wrappers
 │   ├── cards/deck.ts             # Deck builder, shuffle, isPlayable
 │   └── crypto/commitment.ts      # SHA-256 commitments
 ├── store/
@@ -203,7 +220,7 @@ UNO-LAYER/
 ## Known Limitations (MVP)
 
 1. **Private hand trust**: Hands are stored in Supabase, not provably committed on-chain. GenLayer validates hand counts and commitments but cannot independently verify card contents without a commit-reveal scheme.
-2. **GenLayer RPC**: The `lib/genlayer/client.ts` adapter falls back gracefully when GenLayer is not configured. Configure `NEXT_PUBLIC_GENLAYER_RPC_URL` for live validation.
+2. **GenLayer RPC**: `lib/genlayer/client.ts` uses `genlayer-js@1.1.8` first, with a JSON-RPC fallback for local/dev continuity. Configure `NEXT_PUBLIC_GENLAYER_RPC_URL` and `NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS` for live validation.
 3. **No turn timer enforcement**: Turn timers are UI-side only in MVP.
 4. **Stacking not implemented**: Pull Two / Power Shift stacking is a future rules mode.
 5. **Layer! call**: Automatic badge shown at 1 card. Manual call + challenge penalty is Phase 2.
@@ -233,9 +250,9 @@ UNO-LAYER/
 | Layer | Technology |
 |-------|-----------|
 | Framework | Next.js 16, TypeScript, Tailwind CSS v4 |
-| Wallet | wagmi v2, viem v2, RainbowKit v2 |
+| Wallet | Embedded browser wallet, AES-256-GCM, PBKDF2, IndexedDB, viem account helpers |
 | State | Zustand, TanStack Query |
 | Animations | Framer Motion |
 | Database | Supabase Postgres, Realtime, RLS |
-| Contract | Python GenLayer Intelligent Contract (py-genlayer) |
-| Commitment | SHA-256 (Web Crypto API) |
+| Contract | Python GenLayer Intelligent Contract (py-genlayer), genlayer-js 1.1.8 client |
+| Commitment | SHA-256 for commitments/checks only; AES-256-GCM for private-key encryption |

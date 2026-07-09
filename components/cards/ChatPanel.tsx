@@ -15,7 +15,6 @@ export default function ChatPanel({ roomId, walletAddress, messages }: Props) {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {

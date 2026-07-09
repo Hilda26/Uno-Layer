@@ -23,7 +23,6 @@ export default function ProfilePage({ params }: { params: Promise<{ wallet: stri
   const [editMode, setEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
   const [recentGames, setRecentGames] = useState<RecentGame[]>([]);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const supabase = useMemo(() => createClient(), []);
 
   const isMe = address?.toLowerCase() === wallet.toLowerCase();

@@ -11,7 +11,7 @@ class UnoLayer(gl.Contract):
     total_games: u256
 
     def __init__(self) -> None:
-        self.games = {}
+        self.games = TreeMap()
         self.total_games = u256(0)
 
     # -----------------------------------------------------------------------
@@ -183,6 +183,7 @@ class UnoLayer(gl.Contract):
             "move_records": {},
             "challenges": [],
             "layer_callers": [],
+            "entry_fee_paid_by": [],
             "shuffle_seed_contributions": {},
             "deck_seed": "",
             "deck_entropy": "",
@@ -293,6 +294,32 @@ class UnoLayer(gl.Contract):
         })
 
     @gl.public.write
+    def pay_entry_fee(self, game_id: str, amount: str) -> str:
+        state = self._get_game(game_id)
+        caller = self._caller()
+
+        self._require_player(state, caller)
+
+        if state["status"] != "waiting":
+            raise Exception("Entry fee can only be paid before the game starts")
+
+        if amount == "":
+            raise Exception("Entry fee amount cannot be empty")
+
+        if caller not in state["entry_fee_paid_by"]:
+            state["entry_fee_paid_by"].append(caller)
+
+        self._save_game(game_id, state)
+
+        return json.dumps({
+            "status": "entry_fee_recorded",
+            "game_id": game_id,
+            "player": caller,
+            "amount": amount,
+            "paid_count": len(state["entry_fee_paid_by"]),
+        })
+
+    @gl.public.write
     def submit_shuffle_seed(self, game_id: str, contribution: str) -> str:
         state = self._get_game(game_id)
         caller = self._caller()
@@ -394,6 +421,9 @@ class UnoLayer(gl.Contract):
 
         if state["deck_seed"] == "":
             raise Exception("Consensus shuffle seed is required before starting")
+
+        if state["creator"] not in state.get("entry_fee_paid_by", []):
+            raise Exception("Creator must pay the entry fee before starting")
 
         if active_colour not in self._normal_colours():
             raise Exception(f"Invalid active colour: {active_colour}")

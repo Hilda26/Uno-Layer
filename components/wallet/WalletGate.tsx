@@ -16,10 +16,9 @@ export default function WalletGate({ children }: { children: React.ReactNode }) 
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
-    init();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    queueMicrotask(() => setMounted(true));
+    void init();
+  }, [init]);
 
   const showUnlock = !loading && hasWallet && !isUnlocked;
 

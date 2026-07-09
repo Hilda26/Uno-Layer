@@ -26,7 +26,6 @@ import {
   deriveKey,
   aesEncrypt,
   aesDecrypt,
-  sha256,
   hashPassword,
   generateBytes,
   bufToHex,

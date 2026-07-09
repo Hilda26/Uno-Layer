@@ -1,6 +1,6 @@
 "use client";
 
-import type { GameState, UnoLayerCard, CardColour } from "@/types";
+import type { GameState } from "@/types";
 import PlayerSeat from "./PlayerSeat";
 import DiscardPile from "./DiscardPile";
 import DrawPile from "./DrawPile";

@@ -82,6 +82,8 @@ export type ChallengeRecord = {
   reason: string;
   status: "pending" | "resolved" | "dismissed";
   resolution?: string;
+  genlayerVerdict?: string;
+  penaltyPlayer?: string;
   createdAt: string;
 };
 

@@ -28,7 +28,7 @@ export default function WalletButton() {
   const dropRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setMounted(true);
+    queueMicrotask(() => setMounted(true));
   }, []);
 
   // Close dropdown on outside click

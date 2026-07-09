@@ -16,9 +16,7 @@ import { generateSecret } from "@/lib/crypto/commitment";
 function LobbyContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { address, isConnected } = useWallet();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const supabase = useMemo(() => createClient(), []);
+  const { address, isConnected } = useWallet();  const supabase = useMemo(() => createClient(), []);
 
   const [rooms, setRooms] = useState<Room[]>([]);
   const [myRoom, setMyRoom] = useState<Room | null>(null);
@@ -95,8 +93,10 @@ function LobbyContent() {
   }, [address, supabase]);
 
   useEffect(() => {
-    loadPublicRooms();
-    loadMyRoom();
+    queueMicrotask(() => {
+      void loadPublicRooms();
+      void loadMyRoom();
+    });
   }, [loadPublicRooms, loadMyRoom]);
 
   // Realtime: lobby list + my room players

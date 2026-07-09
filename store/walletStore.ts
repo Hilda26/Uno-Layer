@@ -34,7 +34,7 @@ interface WalletStore {
   clearError: () => void;
 }
 
-export const useWalletStore = create<WalletStore>((set, get) => ({
+export const useWalletStore = create<WalletStore>((set) => ({
   address: null,
   isUnlocked: false,
   hasWallet: false,
