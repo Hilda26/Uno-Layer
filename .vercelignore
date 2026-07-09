@@ -1,0 +1,12 @@
+.next
+.next-build
+.next-dev-*
+.next-verify-*
+node_modules
+.git
+.env*
+!.env.example
+dev.log
+dev-server.log
+*.tsbuildinfo
+coverage
